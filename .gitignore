@@ -1,0 +1,21 @@
+# Fichiers temporaires et du système
+*.tmp
+*.log
+
+# Paramètres locaux et secrets
+.env
+.env.*
+
+# Logiciel SimulIDE (binaires, non versionnés)
+SIMULIDE/SimulIDE_*/
+
+# Fichiers compilés Arduino
+*.hex
+*.elf
+build/
+
+# Photos du projet
+Fotos/
+
+# Fichiers temporaires Word
+~$*
