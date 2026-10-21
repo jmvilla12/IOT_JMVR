@@ -1,9 +1,11 @@
 // TempHumiX (Arduino UNO R4 WiFi) : LED de vie 2 Hz, lecture DHT22 toutes les 2 s,
-// date/heure du RTC, connexion WiFi, affichage LCD et envoi sur le port série
+// RTC synchronisé par NTP, connexion WiFi, affichage LCD et envoi sur le port série
 #include "rgb_lcd.h"
 #include <DHT.h>
 #include <RTC.h>
 #include <WiFiS3.h>
+#include <WiFiUdp.h>
+#include <NTPClient.h>
 
 #define VERSION "1.0"
 
@@ -18,9 +20,12 @@ const char WIFI_PASS[] = "72Hin@R*";
 
 rgb_lcd lcd;
 DHT dht(PIN_DHT, DHT22);
+WiFiUDP udp;
+NTPClient ntp(udp, "10.12.130.1", 7200); // serveur NTP IMT, UTC+2 (heure d'été)
 
 float temperature = 0;
 float humidite = 0;
+bool ntpOk = false;
 unsigned int tick = 0; // 1 tick = 100 ms
 
 void afficherBargraphe()
@@ -32,7 +37,7 @@ void afficherBargraphe()
   }
 }
 
-// a) Connexion WiFi : true si OK, false sinon
+// Connexion WiFi : true si OK, false sinon
 bool setup_wifi()
 {
   for (int i = 0; i < 5; i++)
@@ -55,6 +60,19 @@ bool setup_wifi()
   return true;
 }
 
+// e) Synchronisation NTP -> RTC : true si OK
+bool synchroNTP()
+{
+  ntp.begin();
+  ntpOk = ntp.forceUpdate();
+  if (ntpOk)
+  {
+    RTCTime t(ntp.getEpochTime());
+    RTC.setTime(t);
+  }
+  return ntpOk;
+}
+
 void setup()
 {
   pinMode(PIN_LED_VIE, OUTPUT);
@@ -65,17 +83,14 @@ void setup()
   Serial.begin(9600);
   lcd.begin(16, 2);
   dht.begin();
-
-  // RTC initialisé à une date de départ
   RTC.begin();
-  RTCTime debut(21, Month::OCTOBER, 2026, 14, 0, 0, DayOfWeek::WEDNESDAY, SaveLight::SAVING_TIME_ACTIVE);
-  RTC.setTime(debut);
 
-  // b) Connexion au WiFi
+  // Connexion au WiFi puis mise à l'heure par NTP
   lcd.print("Connexion WiFi..");
   bool wifiOk = setup_wifi();
+  synchroNTP();
 
-  // d) Écran d'accueil : version + date / adresse IP (3 s)
+  // Écran d'accueil : version + date / adresse IP (3 s)
   char accueil[21];
   RTCTime now;
   RTC.getTime(now);
@@ -102,14 +117,21 @@ void loop()
   // LED de vie à 2 Hz : période 500 ms = 5 ticks
   digitalWrite(PIN_LED_VIE, (tick % 5) < 2 ? HIGH : LOW);
 
-  // Ligne 1 du LCD : date et heure du RTC (chaque seconde = 10 ticks)
+  // Ligne 1 du LCD : date et heure (chaque seconde), ou message si pas de NTP
   if (tick % 10 == 0)
   {
     RTC.getTime(now);
     sprintf(date, "%02d/%02d %02d:%02d:%02d", now.getDayOfMonth(), Month2int(now.getMonth()),
             now.getHour(), now.getMinutes(), now.getSeconds());
     lcd.setCursor(0, 0);
-    lcd.print(date);
+    if (ntpOk)
+    {
+      lcd.print(date);
+    }
+    else
+    {
+      lcd.print("Pas de synch NTP");
+    }
   }
 
   // Lecture du DHT22 toutes les 2000 ms = 20 ticks
