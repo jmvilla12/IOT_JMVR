@@ -1,13 +1,20 @@
 // TempHumiX (Arduino UNO R4 WiFi) : LED de vie 2 Hz, lecture DHT22 toutes les 2 s,
-// date/heure du RTC, affichage LCD et envoi sur le port série
+// date/heure du RTC, connexion WiFi, affichage LCD et envoi sur le port série
 #include "rgb_lcd.h"
 #include <DHT.h>
 #include <RTC.h>
+#include <WiFiS3.h>
+
+#define VERSION "1.0"
 
 #define PIN_LED_VIE 2
 #define PIN_BARGRAPH 3 // bargraphe sur les broches 3 à 12
 #define NB_LEDS 10
 #define PIN_DHT A0
+
+// Paramètres WiFi (5.1.1)
+const char WIFI_SSID[] = "IoT IMT Nord Europe";
+const char WIFI_PASS[] = "72Hin@R*";
 
 rgb_lcd lcd;
 DHT dht(PIN_DHT, DHT22);
@@ -25,6 +32,29 @@ void afficherBargraphe()
   }
 }
 
+// a) Connexion WiFi : true si OK, false sinon
+bool setup_wifi()
+{
+  for (int i = 0; i < 5; i++)
+  {
+    if (WiFi.begin(WIFI_SSID, WIFI_PASS) == WL_CONNECTED)
+    {
+      break;
+    }
+    delay(2000);
+  }
+  if (WiFi.status() != WL_CONNECTED)
+  {
+    return false;
+  }
+  // attendre que le DHCP donne l'adresse IP
+  for (int i = 0; i < 50 && WiFi.localIP() == IPAddress(0, 0, 0, 0); i++)
+  {
+    delay(100);
+  }
+  return true;
+}
+
 void setup()
 {
   pinMode(PIN_LED_VIE, OUTPUT);
@@ -36,10 +66,29 @@ void setup()
   lcd.begin(16, 2);
   dht.begin();
 
-  // a) RTC initialisé à une date de départ (sera remplacé par le NTP en 6.1.3)
+  // RTC initialisé à une date de départ
   RTC.begin();
   RTCTime debut(21, Month::OCTOBER, 2026, 14, 0, 0, DayOfWeek::WEDNESDAY, SaveLight::SAVING_TIME_ACTIVE);
   RTC.setTime(debut);
+
+  // b) Connexion au WiFi
+  lcd.print("Connexion WiFi..");
+  bool wifiOk = setup_wifi();
+
+  // d) Écran d'accueil : version + date / adresse IP (3 s)
+  char accueil[21];
+  RTCTime now;
+  RTC.getTime(now);
+  sprintf(accueil, "V%s  %02d/%02d/%04d", VERSION, now.getDayOfMonth(), Month2int(now.getMonth()), now.getYear());
+  String ip = wifiOk ? WiFi.localIP().toString() : String("WiFi KO");
+  lcd.clear();
+  lcd.print(accueil);
+  lcd.setCursor(0, 1);
+  lcd.print(ip);
+  Serial.println(accueil);
+  Serial.println(ip);
+  delay(3000);
+  lcd.clear();
 }
 
 void loop()
@@ -53,7 +102,7 @@ void loop()
   // LED de vie à 2 Hz : période 500 ms = 5 ticks
   digitalWrite(PIN_LED_VIE, (tick % 5) < 2 ? HIGH : LOW);
 
-  // b) Ligne 1 du LCD : date et heure du RTC (chaque seconde = 10 ticks)
+  // Ligne 1 du LCD : date et heure du RTC (chaque seconde = 10 ticks)
   if (tick % 10 == 0)
   {
     RTC.getTime(now);
