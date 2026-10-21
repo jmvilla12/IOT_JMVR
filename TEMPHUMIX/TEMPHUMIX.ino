@@ -1,5 +1,5 @@
-// TempHumiX (Arduino UNO R4 WiFi) : LED de vie 2 Hz, lecture DHT22 toutes les 2 s,
-// RTC synchronisé par NTP, WiFi, affichage LCD, port série et publication MQTT
+// TempHumiX (Arduino UNO R4 WiFi) : LED de vie, lecture DHT22 toutes les 2 s,
+// RTC synchronisé par NTP, WiFi, affichage LCD, port série, publication et souscription MQTT
 #include "rgb_lcd.h"
 #include <DHT.h>
 #include <RTC.h>
@@ -33,6 +33,11 @@ const char T_TEMP[] = GROUPE "TEMPERATURE_" ID_PC;
 const char T_HUM[] = GROUPE "HUMIDITY_" ID_PC;
 const char T_DATE[] = GROUPE "GET_DATE_" ID_PC;
 
+// Topics souscrits (3.2)
+const char T_COMMAND[] = GROUPE "COMMAND_" ID_PC;
+const char T_BARGRAPH[] = GROUPE "BARGRAPH_" ID_PC;
+const char T_BLINK[] = GROUPE "BLINK_" ID_PC;
+
 rgb_lcd lcd;
 DHT dht(PIN_DHT, DHT22);
 WiFiUDP udp;
@@ -43,11 +48,15 @@ MqttClient mqtt(wifiClient);
 float temperature = 0;
 float humidite = 0;
 bool ntpOk = false;
-unsigned int tick = 0; // 1 tick = 100 ms
+bool mesureActive = true; // commandes 20 / 30
+int periodeLed = 5;       // période LED en ticks : 5 = 500 ms = 2 Hz
+int periodePerso = 5;     // période reçue via BLINK_ (en ticks)
+unsigned int tick = 0;    // 1 tick = 100 ms
 
-void afficherBargraphe()
+// Bargraphe piloté par MQTT : 0-1023 -> 0-10 LEDs
+void afficherBargraphe(int valeur)
 {
-  int nb = humidite / 10; // humidité 0-100 % -> 0-10 LEDs
+  int nb = map(constrain(valeur, 0, 1023), 0, 1023, 0, NB_LEDS);
   for (int i = 0; i < NB_LEDS; i++)
   {
     digitalWrite(PIN_BARGRAPH + i, i < nb ? HIGH : LOW);
@@ -98,7 +107,46 @@ void publier(const char *topic, const char *valeur)
   mqtt.endMessage();
 }
 
-// b) Connexion au broker MQTT : 0 si OK, code erreur MQTT sinon
+// a) Appelée à la réception d'un message MQTT souscrit
+void onMqttMessage(int tailleMessage)
+{
+  // acquisition du topic et du message
+  String topic = mqtt.messageTopic();
+  String message = "";
+  while (mqtt.available())
+  {
+    message += (char)mqtt.read();
+  }
+  // conversion du message en entier
+  int valeur = message.toInt();
+  Serial.println(topic + " = " + message);
+
+  if (topic.indexOf("COMMAND") >= 0)
+  {
+    if (valeur == 10)
+      synchroNTP(); // forcer la mise à l'heure
+    if (valeur == 20)
+      mesureActive = true; // démarrage mesure
+    if (valeur == 30)
+      mesureActive = false; // arrêt mesure
+    if (valeur == 40)
+      periodeLed = 10; // clignotement lent (1 s)
+    if (valeur == 50)
+      periodeLed = 2; // clignotement rapide (200 ms)
+    if (valeur == 60)
+      periodeLed = periodePerso; // clignotement personnalisé
+  }
+  else if (topic.indexOf("BARGRAPH") >= 0)
+  {
+    afficherBargraphe(valeur);
+  }
+  else if (topic.indexOf("BLINK") >= 0)
+  {
+    periodePerso = max(2, valeur / 100); // ms (multiple de 100) -> ticks
+  }
+}
+
+// Connexion au broker MQTT + souscription : 0 si OK, code erreur MQTT sinon
 int setup_mqtt()
 {
   mqtt.setId("IdO_Client_" ID_PC);
@@ -107,10 +155,15 @@ int setup_mqtt()
   {
     return mqtt.connectError();
   }
+  // b) callback + souscription aux 3 topics
+  mqtt.onMessage(onMqttMessage);
+  mqtt.subscribe(T_COMMAND);
+  mqtt.subscribe(T_BARGRAPH);
+  mqtt.subscribe(T_BLINK);
   return 0;
 }
 
-// d) Publication des 4 topics
+// Publication des 4 topics
 void publierMesures(const char *txtT, const char *txtH)
 {
   char date[21];
@@ -156,7 +209,7 @@ void setup()
   delay(3000);
   lcd.clear();
 
-  // c) Connexion au broker MQTT
+  // Connexion au broker MQTT (+ souscriptions)
   int err = setup_mqtt();
   Serial.print("MQTT : ");
   Serial.println(err);
@@ -170,10 +223,10 @@ void loop()
   char txtH[8];
   RTCTime now;
 
-  mqtt.poll(); // maintient la connexion MQTT (keep alive)
+  mqtt.poll(); // maintient la connexion et appelle onMqttMessage si message reçu
 
-  // LED de vie à 2 Hz : période 500 ms = 5 ticks
-  digitalWrite(PIN_LED_VIE, (tick % 5) < 2 ? HIGH : LOW);
+  // LED de vie : allumée sur une partie de la période (5 ticks = 2 Hz par défaut)
+  digitalWrite(PIN_LED_VIE, (tick % periodeLed) < periodeLed / 2 ? HIGH : LOW);
 
   // Ligne 1 du LCD : date et heure (chaque seconde), ou message si pas de NTP
   if (tick % 10 == 0)
@@ -192,8 +245,8 @@ void loop()
     }
   }
 
-  // Lecture du DHT22 toutes les 2000 ms = 20 ticks
-  if (tick % 20 == 0)
+  // Lecture du DHT22 toutes les 2000 ms = 20 ticks (si la mesure est active)
+  if (tick % 20 == 0 && mesureActive)
   {
     float t = dht.readTemperature();
     float h = dht.readHumidity();
@@ -202,7 +255,6 @@ void loop()
       temperature = t;
       humidite = h;
     }
-    afficherBargraphe();
 
     dtostrf(temperature, 4, 1, txtT);
     dtostrf(humidite, 4, 1, txtH);
@@ -222,7 +274,7 @@ void loop()
     lcd.setCursor(0, 1);
     lcd.print(ligne);
 
-    // e) Publication MQTT toutes les 2 s (reconnexion si besoin)
+    // Publication MQTT toutes les 2 s (reconnexion si besoin)
     if (!mqtt.connected())
     {
       setup_mqtt();
