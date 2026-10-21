@@ -47,6 +47,8 @@ MqttClient mqtt(wifiClient);
 
 float temperature = 0;
 float humidite = 0;
+float tPrec = -100; // dernières valeurs publiées (6.1.6 b)
+float hPrec = -100;
 bool ntpOk = false;
 bool mesureActive = true; // commandes 20 / 30
 int periodeLed = 5;       // période LED en ticks : 5 = 500 ms = 2 Hz
@@ -107,7 +109,7 @@ void publier(const char *topic, const char *valeur)
   mqtt.endMessage();
 }
 
-// a) Appelée à la réception d'un message MQTT souscrit
+// Appelée à la réception d'un message MQTT souscrit
 void onMqttMessage(int tailleMessage)
 {
   // acquisition du topic et du message
@@ -123,8 +125,9 @@ void onMqttMessage(int tailleMessage)
 
   if (topic.indexOf("COMMAND") >= 0)
   {
-    if (valeur == 10)
-      synchroNTP(); // forcer la mise à l'heure
+    // a) la version n'est publiée qu'après une synchro NTP réussie (commande 10)
+    if (valeur == 10 && synchroNTP())
+      publier(T_VERSION, VERSION);
     if (valeur == 20)
       mesureActive = true; // démarrage mesure
     if (valeur == 30)
@@ -155,7 +158,7 @@ int setup_mqtt()
   {
     return mqtt.connectError();
   }
-  // b) callback + souscription aux 3 topics
+  // callback + souscription aux 3 topics
   mqtt.onMessage(onMqttMessage);
   mqtt.subscribe(T_COMMAND);
   mqtt.subscribe(T_BARGRAPH);
@@ -163,7 +166,7 @@ int setup_mqtt()
   return 0;
 }
 
-// Publication des 4 topics
+// Publication température, humidité et date/heure
 void publierMesures(const char *txtT, const char *txtH)
 {
   char date[21];
@@ -171,7 +174,6 @@ void publierMesures(const char *txtT, const char *txtH)
   RTC.getTime(now);
   sprintf(date, "%02d/%02d/%04d %02d:%02d:%02d", now.getDayOfMonth(), Month2int(now.getMonth()),
           now.getYear(), now.getHour(), now.getMinutes(), now.getSeconds());
-  publier(T_VERSION, VERSION);
   publier(T_TEMP, txtT);
   publier(T_HUM, txtH);
   publier(T_DATE, date);
@@ -274,12 +276,17 @@ void loop()
     lcd.setCursor(0, 1);
     lcd.print(ligne);
 
-    // Publication MQTT toutes les 2 s (reconnexion si besoin)
+    // b) Publication MQTT seulement si la température ou l'humidité a changé
     if (!mqtt.connected())
     {
       setup_mqtt();
     }
-    publierMesures(txtT, txtH);
+    if (temperature != tPrec || humidite != hPrec)
+    {
+      publierMesures(txtT, txtH);
+      tPrec = temperature;
+      hPrec = humidite;
+    }
   }
 
   tick++;
