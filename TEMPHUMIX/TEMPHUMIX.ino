@@ -1,13 +1,16 @@
 // TempHumiX (Arduino UNO R4 WiFi) : LED de vie 2 Hz, lecture DHT22 toutes les 2 s,
-// RTC synchronisé par NTP, connexion WiFi, affichage LCD et envoi sur le port série
+// RTC synchronisé par NTP, WiFi, affichage LCD, port série et publication MQTT
 #include "rgb_lcd.h"
 #include <DHT.h>
 #include <RTC.h>
 #include <WiFiS3.h>
 #include <WiFiUdp.h>
 #include <NTPClient.h>
+#include <ArduinoMqttClient.h>
 
 #define VERSION "1.0"
+#define ID_PC "42906" // numéro sous le code-barres du PC
+#define GROUPE "/iot/"
 
 #define PIN_LED_VIE 2
 #define PIN_BARGRAPH 3 // bargraphe sur les broches 3 à 12
@@ -18,10 +21,24 @@
 const char WIFI_SSID[] = "IoT IMT Nord Europe";
 const char WIFI_PASS[] = "72Hin@R*";
 
+// Paramètres broker Mosquitto (5.1.2)
+const char BROKER[] = "192.168.1.1";
+const int BROKER_PORT = 1883;
+const char MQTT_USER[] = "mos_user";
+const char MQTT_PASS[] = "mos_user";
+
+// Topics publiés (3.2)
+const char T_VERSION[] = GROUPE "VERSION_" ID_PC;
+const char T_TEMP[] = GROUPE "TEMPERATURE_" ID_PC;
+const char T_HUM[] = GROUPE "HUMIDITY_" ID_PC;
+const char T_DATE[] = GROUPE "GET_DATE_" ID_PC;
+
 rgb_lcd lcd;
 DHT dht(PIN_DHT, DHT22);
 WiFiUDP udp;
 NTPClient ntp(udp, "10.12.130.1", 7200); // serveur NTP IMT, UTC+2 (heure d'été)
+WiFiClient wifiClient;
+MqttClient mqtt(wifiClient);
 
 float temperature = 0;
 float humidite = 0;
@@ -60,7 +77,7 @@ bool setup_wifi()
   return true;
 }
 
-// e) Synchronisation NTP -> RTC : true si OK
+// Synchronisation NTP -> RTC : true si OK
 bool synchroNTP()
 {
   ntp.begin();
@@ -71,6 +88,40 @@ bool synchroNTP()
     RTC.setTime(t);
   }
   return ntpOk;
+}
+
+// Publie une valeur sur un topic
+void publier(const char *topic, const char *valeur)
+{
+  mqtt.beginMessage(topic);
+  mqtt.print(valeur);
+  mqtt.endMessage();
+}
+
+// b) Connexion au broker MQTT : 0 si OK, code erreur MQTT sinon
+int setup_mqtt()
+{
+  mqtt.setId("IdO_Client_" ID_PC);
+  mqtt.setUsernamePassword(MQTT_USER, MQTT_PASS);
+  if (!mqtt.connect(BROKER, BROKER_PORT))
+  {
+    return mqtt.connectError();
+  }
+  return 0;
+}
+
+// d) Publication des 4 topics
+void publierMesures(const char *txtT, const char *txtH)
+{
+  char date[21];
+  RTCTime now;
+  RTC.getTime(now);
+  sprintf(date, "%02d/%02d/%04d %02d:%02d:%02d", now.getDayOfMonth(), Month2int(now.getMonth()),
+          now.getYear(), now.getHour(), now.getMinutes(), now.getSeconds());
+  publier(T_VERSION, VERSION);
+  publier(T_TEMP, txtT);
+  publier(T_HUM, txtH);
+  publier(T_DATE, date);
 }
 
 void setup()
@@ -104,6 +155,11 @@ void setup()
   Serial.println(ip);
   delay(3000);
   lcd.clear();
+
+  // c) Connexion au broker MQTT
+  int err = setup_mqtt();
+  Serial.print("MQTT : ");
+  Serial.println(err);
 }
 
 void loop()
@@ -113,6 +169,8 @@ void loop()
   char txtT[8];
   char txtH[8];
   RTCTime now;
+
+  mqtt.poll(); // maintient la connexion MQTT (keep alive)
 
   // LED de vie à 2 Hz : période 500 ms = 5 ticks
   digitalWrite(PIN_LED_VIE, (tick % 5) < 2 ? HIGH : LOW);
@@ -163,6 +221,13 @@ void loop()
     sprintf(ligne, "T %soC/H %s%%", txtT, txtH);
     lcd.setCursor(0, 1);
     lcd.print(ligne);
+
+    // e) Publication MQTT toutes les 2 s (reconnexion si besoin)
+    if (!mqtt.connected())
+    {
+      setup_mqtt();
+    }
+    publierMesures(txtT, txtH);
   }
 
   tick++;
