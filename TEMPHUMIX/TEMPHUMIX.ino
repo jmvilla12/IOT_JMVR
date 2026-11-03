@@ -41,7 +41,7 @@ const char T_BLINK[] = GROUPE "BLINK_" ID_PC;
 rgb_lcd lcd;
 DHT dht(PIN_DHT, DHT22);
 WiFiUDP udp;
-NTPClient ntp(udp, "10.12.130.1", 7200); // serveur NTP IMT, UTC+2 (heure d'été)
+NTPClient ntp(udp, "192.168.1.254", 3600); // serveur NTP du réseau IoT, UTC+1 (heure d'hiver)
 WiFiClient wifiClient;
 MqttClient mqtt(wifiClient);
 
