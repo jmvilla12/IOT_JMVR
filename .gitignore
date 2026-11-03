@@ -19,3 +19,9 @@ Fotos/
 
 # Fichiers temporaires Word
 ~$*
+
+# Python
+.venv/
+__pycache__/
+.idea/
+*.db
