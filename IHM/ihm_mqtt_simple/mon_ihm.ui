@@ -321,6 +321,8 @@ QLineEdit { min-height: 28px; }</string>
     <property name="title">
      <string>Fichier</string>
     </property>
+    <addaction name="actionCourbes"/>
+    <addaction name="separator"/>
     <addaction name="actionQuitter"/>
    </widget>
    <widget class="QMenu" name="menuAide">
@@ -333,6 +335,11 @@ QLineEdit { min-height: 28px; }</string>
    <addaction name="menuAide"/>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
+  <action name="actionCourbes">
+   <property name="text">
+    <string>Courbes des données</string>
+   </property>
+  </action>
   <action name="actionQuitter">
    <property name="text">
     <string>Quitter</string>

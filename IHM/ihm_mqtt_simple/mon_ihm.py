@@ -26,6 +26,8 @@ class Ui_MainWindow(object):
         if not MainWindow.objectName():
             MainWindow.setObjectName(u"MainWindow")
         MainWindow.resize(640, 800)
+        self.actionCourbes = QAction(MainWindow)
+        self.actionCourbes.setObjectName(u"actionCourbes")
         self.actionQuitter = QAction(MainWindow)
         self.actionQuitter.setObjectName(u"actionQuitter")
         self.actionAPropos = QAction(MainWindow)
@@ -239,6 +241,8 @@ class Ui_MainWindow(object):
 
         self.menubar.addAction(self.menuFichier.menuAction())
         self.menubar.addAction(self.menuAide.menuAction())
+        self.menuFichier.addAction(self.actionCourbes)
+        self.menuFichier.addSeparator()
         self.menuFichier.addAction(self.actionQuitter)
         self.menuAide.addAction(self.actionAPropos)
 
@@ -249,6 +253,7 @@ class Ui_MainWindow(object):
 
     def retranslateUi(self, MainWindow):
         MainWindow.setWindowTitle(QCoreApplication.translate("MainWindow", u"Mon capteur IDO via MQTT (c)2026 CERI SN - PPI", None))
+        self.actionCourbes.setText(QCoreApplication.translate("MainWindow", u"Courbes des donn\u00e9es", None))
         self.actionQuitter.setText(QCoreApplication.translate("MainWindow", u"Quitter", None))
         self.actionAPropos.setText(QCoreApplication.translate("MainWindow", u"\u00c0 propos", None))
         self.grpBroker.setTitle(QCoreApplication.translate("MainWindow", u"Param\u00e8tres de communication du Broker MQTT", None))

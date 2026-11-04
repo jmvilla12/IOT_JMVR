@@ -8,6 +8,7 @@ from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox
 from client_mqtt import ClientMQTT
 from thread_mqtt import ThreadMQTT
 from mon_ihm import Ui_MainWindow
+from dialogue_courbe import CourbeDialog
 
 id_pc = 42906
 
@@ -49,6 +50,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.btnBargraph.clicked.connect(self.setBargraph)        # (nouveau)
         self.actionQuitter.triggered.connect(self.quit)
         self.actionAPropos.triggered.connect(self.aPropos)        # (nouveau)
+        self.actionCourbes.triggered.connect(self.afficherCourbes)
 
     # Affiche les dernières valeurs reçues du capteur
     def display(self):
@@ -116,7 +118,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def setBargraph(self):
         self.envoyer(topic_bargraphe, self.lneBargraph.text())
 
-    # (nouveau) menu Aide > À propos
+    def afficherCourbes(self):
+        dialogue = CourbeDialog()
+        dialogue.exec()
+
     def aPropos(self):
         QMessageBox.about(self, "À propos",
                           f"Mon capteur IdO via MQTT\nIMT Nord Europe - PPI\nCapteur {id_pc}")
