@@ -1,3 +1,4 @@
+import os
 from threading import Thread
 
 id_pc = 42906
@@ -6,6 +7,11 @@ topic_version = f"/iot/VERSION_{id_pc}"
 topic_temperature = f"/iot/TEMPERATURE_{id_pc}"
 topic_humidite = f"/iot/HUMIDITY_{id_pc}"
 topic_datetime = f"/iot/GET_DATE_{id_pc}"
+topic_commande = f"/iot/COMMAND_{id_pc}"
+
+# base créée à côté des fichiers python, quel que soit le dossier de lancement
+database_name = os.path.join(os.path.dirname(__file__), "IOT.db")
+table_name = "IOT_DATA"
 
 
 class ThreadMQTT(Thread):
@@ -15,13 +21,21 @@ class ThreadMQTT(Thread):
         self.stop = False
 
     def run(self):
+        # c) la base est ouverte dans le thread qui l'utilise
+        self.mqtt.connect_sqlite(database_name, table_name)
+
         self.mqtt.subscribe_mqtt(topic_version)
         self.mqtt.subscribe_mqtt(topic_temperature)
         self.mqtt.subscribe_mqtt(topic_humidite)
         self.mqtt.subscribe_mqtt(topic_datetime)
+        # le capteur ne publie sa version qu'avec la commande 10 : on la demande au démarrage
+        self.mqtt.publish_mqtt(topic_commande, 10)
+
         # boucle de lecture : rend la main toutes les secondes pour vérifier stop
         while not self.stop:
             self.mqtt.wait_mqtt(timeout=1.0)
+
+        self.mqtt.disconnect_sqlite()
 
     def stopthread(self):
         self.stop = True
